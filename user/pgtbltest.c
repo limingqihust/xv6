@@ -58,9 +58,9 @@ pgaccess_test()
   buf = malloc(32 * PGSIZE);
   if (pgaccess(buf, 32, &abits) < 0)
     err("pgaccess failed");
-  buf[PGSIZE * 1] += 1;
-  buf[PGSIZE * 2] += 1;
-  buf[PGSIZE * 30] += 1;
+  buf[PGSIZE * 1] += 1;   // 访问第0页
+  buf[PGSIZE * 2] += 1;   // 访问第1页
+  buf[PGSIZE * 30] += 1;  // 访问第2页
   if (pgaccess(buf, 32, &abits) < 0)
     err("pgaccess failed");
   if (abits != ((1 << 1) | (1 << 2) | (1 << 30)))

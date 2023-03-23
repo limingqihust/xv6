@@ -18,7 +18,7 @@ sys_exit(void)
 uint64
 sys_getpid(void)
 {
-  return myproc()->pid;
+    return myproc()->pid;
 }
 
 uint64
@@ -75,6 +75,22 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 vm;        // 要检查的用户页的第一个虚拟地址
+  int num_page;     // 要检查的用户页的数目
+  uint64 dst_buffer;  // 结果要保存的buffer地址
+  argaddr(0,&vm);
+  argint(1, &num_page);
+  argaddr(2,&dst_buffer);
+  int ans=0;
+  uint64 va=vm;
+  for(int i=0;i<((num_page<32)?num_page:32);i++,va+=PGSIZE)
+  {
+    pte_t* pte=walk(myproc()->pagetable, va, 0);
+    if((*pte) & PTE_A)
+      ans |=(1<<i);
+    (*pte) &= (~(uint64)PTE_A);
+  }
+  copyout(myproc()->pagetable,dst_buffer,(char*)&ans,sizeof(int));
   return 0;
 }
 #endif
