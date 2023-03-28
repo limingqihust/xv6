@@ -102,6 +102,8 @@ allocpid()
   return pid;
 }
 
+
+char trapframe_alarm[512];
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -132,6 +134,12 @@ found:
     return 0;
   }
 
+  if((p->trapframe_buf = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -146,6 +154,11 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+
+
+  p->ticks_interval=0;
+  p->ticks=0;
+  p->handler=0;
   return p;
 }
 

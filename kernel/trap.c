@@ -33,6 +33,7 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+
 void
 usertrap(void)
 {
@@ -78,7 +79,19 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
+  {
+    
+    if(p->ticks_interval)
+    {
+      p->ticks++;
+      if(p->ticks==p->ticks_interval)
+      {
+        memmove(p->trapframe_buf,p->trapframe,sizeof(struct trapframe));
+        p->trapframe->epc=p->handler;
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }
