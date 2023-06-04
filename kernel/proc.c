@@ -146,6 +146,12 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  for(int i=0;i<VMA_MAX;i++)
+  {
+    p->vma[i].valid=0;
+    p->vma[i].mapcnt=0;
+  }
+  p->maxaddr=MAXVA-2*PGSIZE;
   return p;
 }
 
@@ -322,6 +328,15 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+
+  for(int i=0;i<VMA_MAX;i++)
+  {
+    if(p->vma[i].valid)
+    {
+      memmove(np->vma+i,p->vma+i,sizeof(struct VMA));
+      filedup(p->vma[i].f);
+    }
+  }
   return pid;
 }
 
@@ -357,6 +372,24 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  // added for lab10 mmap
+  for(int i=0;i<VMA_MAX;i++)
+  {
+    if(p->vma[i].valid)
+    {
+      for(uint64 addr=p->vma[i].addr;addr<p->vma[i].addr+p->vma[i].len;addr+=PGSIZE)
+      {
+        if(walkaddr(p->pagetable,addr)!=0)
+        {
+          uvmunmap(p->pagetable,addr,1,1);
+        }
+      }
+      filewrite(p->vma[i].f,p->vma[i].addr,p->vma[i].len);
+      fileclose(p->vma[i].f);
+      p->vma[i].valid=0;
     }
   }
 

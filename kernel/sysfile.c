@@ -503,3 +503,80 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int len,off,prot,flags,fd;
+  argaddr(0,&addr);
+  argint(1,&len);
+  argint(2,&prot);
+  argint(3,&flags);
+  argint(4,&fd);
+  argint(5,&off);
+  struct proc* p=myproc();
+  struct file* f=p->ofile[fd];
+
+  // 检查权限是否非法
+  if(!f->writable && (prot&PROT_WRITE) && !(flags & MAP_PRIVATE)) 
+    return -1;
+  if(!f->readable && (prot&PROT_READ))
+    return -1;
+
+  int available_vma_idx=-1;
+  for(int i=0;i<VMA_MAX;i++)
+  {
+    if(p->vma[i].valid==0)
+    {
+      available_vma_idx=i;
+      break;
+    }
+  }
+  if(available_vma_idx==-1)
+    panic("do not have enough vma\n");
+  struct VMA* v=p->vma+available_vma_idx;
+  v->valid=1;       // 有效位
+  v->len=len;       // 映射长度
+  v->prot=prot;     // 权限 可读/可写/可读可写
+  v->flags=flags;   // 标志位 共享/私有
+  v->f=f;           // 文件
+  filedup(f);       // 增加文件引用计数
+  p->maxaddr-=len;
+  v->addr=p->maxaddr;
+  return v->addr;
+}
+
+uint64 
+sys_munmap(void)
+{
+  uint64 addr;
+  int len;
+  argaddr(0,&addr);
+  argint(1,&len);
+  struct proc* p=myproc();
+  struct VMA* v=0;
+  for(int i=0;i<VMA_MAX;i++)
+  {
+    if(p->vma[i].addr==addr)
+    {
+      v=p->vma+i;
+      break;
+    }
+  }
+  if(!v)
+    return 0;
+  if(walkaddr(p->pagetable,v->addr)!=0)
+  {
+    if( v->flags == MAP_SHARED )
+      filewrite(v->f,addr,v->len);                      // 写回文件
+    uvmunmap( p->pagetable , addr , len/PGSIZE , 1 );   //unmap
+  }
+  v->mapcnt-=len;
+  if(v->mapcnt==0)
+  {
+    fileclose(v->f);
+    v->valid=0;
+  }
+  return 0;
+}

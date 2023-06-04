@@ -5,6 +5,8 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+// #include "fs.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -65,7 +67,39 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } 
+  else if(r_scause()==0xd)
+  {
+    // 缺页中断
+    uint64 addr=r_stval();    // 发生缺页中断的地址
+    struct VMA* v=0;
+    for(int i=0;i<VMA_MAX;i++)// 寻找可利用的vma
+    {
+      if(p->vma[i].addr <= addr && addr <= p->vma[i].addr+p->vma[i].len-1  && p->vma[i].valid)
+      {
+        v=p->vma+i;
+        break;
+      }
+    }
+    if(!v)                    // 没有对应的vma
+    {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      setkilled(p);
+    }
+    else                      // 找到对应的vma
+    {
+      uint64 mem=(uint64)kalloc();
+      memset((void*)mem,0,PGSIZE);
+      if(mappages(p->pagetable,addr,PGSIZE,mem,PTE_U | PTE_V | (v->prot<<1))==-1)
+        panic("pagefault: mappages error\n");
+      v->mapcnt+=PGSIZE;
+      ilock(v->f->ip);
+      readi(v->f->ip,0,mem,addr-v->addr,PGSIZE);// inode | usr_dst | dst | off | n
+      iunlock(v->f->ip);
+    }
+  }
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
