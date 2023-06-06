@@ -296,6 +296,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+extern int ref_cnt[];
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -308,22 +309,29 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
-  for(i = 0; i < sz; i += PGSIZE){
+  for(i = 0; i < sz; i += PGSIZE)
+  {
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    if(flags & PTE_W)                             // 设置子进程的pte的标志位
+    {
+      flags &= ~PTE_W;
+      flags |= PTE_COW;
+    }
+    *pte=PA2PTE(pa) | flags;
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE,pa, flags) != 0){ // 将父进程的pte拷贝到子进程中           
       goto err;
     }
+    ref_cnt[pa/PGSIZE]++;
   }
   return 0;
 
@@ -345,6 +353,18 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+// 判断是不是属于COW的情况
+int check_cow(pagetable_t pagetable,uint64 va)
+{
+  if(va>=MAXVA)
+    return 0;
+  pte_t* pte=walk(pagetable,PGROUNDDOWN(va),0);
+  if(pte==0)
+    return 0;
+  if(!(*pte & PTE_COW))
+    return 0;
+  return 1;
+}
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -354,6 +374,24 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
 
   while(len > 0){
+    if(check_cow(pagetable,dstva))
+    {
+      pte_t* pte=walk(pagetable,PGROUNDDOWN(dstva),0);
+    
+      uint64 old_pa=PTE2PA(*pte);
+      uint64 new_pa=(uint64)kalloc();
+      if(new_pa==0)
+        panic("copyout: kalloc error\n");
+      uint64 flags=PTE_FLAGS(*pte);
+      flags &= ~PTE_COW;
+      flags |= PTE_W;
+      memmove((void*)new_pa, (void*)old_pa, PGSIZE); // 将旧页的数据拷贝到新页
+      uvmunmap(pagetable, PGROUNDDOWN(dstva), 1, 1); 
+      if(mappages(pagetable, PGROUNDDOWN(dstva), PGSIZE,new_pa, flags) != 0){  // 将父进程的pte拷贝到子进程中           
+        panic("usertrap: mmappages error\n");
+      }
+    }
+    
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)

@@ -65,9 +65,39 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } 
+  else if(r_scause()==0xd || r_scause()==0xf)                // 缺页异常
+  {
+    struct proc* p=myproc();
+    uint64 va=r_stval();
+    pte_t* pte=walk(p->pagetable,PGROUNDDOWN(va),0);
+    if(pte==0 || !(*pte & PTE_COW))       // 发生普通的缺页异常
+    {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      setkilled(p);
+    }
+    else                                  // 发生cow引起的缺页异常
+    {
+      uint64 old_pa=PTE2PA(*pte);         // 旧页的物理地址
+      uint64 new_pa=(uint64)kalloc();     // 新页的物理地址
+      if(new_pa==0) 
+        panic("usertrap: kalloc error\n");
+      uint64 flags = PTE_FLAGS(*pte);     // 标志位
+      flags &= ~PTE_COW;
+      flags |= PTE_W;
+      memmove((void*)new_pa, (void*)old_pa, PGSIZE);   // 将旧页的数据拷贝到新页
+      uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 1);   // 需要free
+      if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE,new_pa, flags) != 0){  // 将父进程的pte拷贝到子进程中           
+        panic("usertrap: mmappages error\n");
+      }
+    }
+  }
+  
+  else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } 
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     setkilled(p);
