@@ -23,10 +23,16 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct page_lock
+{
+  struct spinlock lock;
+  int cnt[557056+100];
+}page_ref;
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&page_ref.lock,"page_ref");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -46,9 +52,18 @@ int ref_cnt[557056+100];
 void
 kfree(void *pa)
 {
-  ref_cnt[(uint64)pa/PGSIZE]=ref_cnt[(uint64)pa/PGSIZE]==0?0:(ref_cnt[(uint64)pa/PGSIZE]-1);//引用计数-1
-  if(ref_cnt[(uint64)pa/PGSIZE])    // 引用计数!=0
+  
+  // ref_cnt[(uint64)pa/PGSIZE]=ref_cnt[(uint64)pa/PGSIZE]==0?0:(ref_cnt[(uint64)pa/PGSIZE]-1);//引用计数-1
+  // if(ref_cnt[(uint64)pa/PGSIZE])    // 引用计数!=0
+  //   return ;
+  acquire(&page_ref.lock);
+  page_ref.cnt[(uint64)pa/PGSIZE]=page_ref.cnt[(uint64)pa/PGSIZE]==0?0:(page_ref.cnt[(uint64)pa/PGSIZE]-1);//引用计数-1
+  if(page_ref.cnt[(uint64)pa/PGSIZE])    // 引用计数!=0
+  {
+    release(&page_ref.lock);
     return ;
+  }
+  release(&page_ref.lock);
   struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
@@ -81,6 +96,10 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
-  ref_cnt[(uint64)r/PGSIZE]++;    // 引用计数+1 
+  
+  // ref_cnt[(uint64)r/PGSIZE]++;    // 引用计数+1 
+  acquire(&page_ref.lock);
+  page_ref.cnt[(uint64)r/PGSIZE]++;
+  release(&page_ref.lock);
   return (void*)r;
 }

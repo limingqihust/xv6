@@ -6,6 +6,7 @@
         "param.h": "c",
         "types.h": "c",
         "elf.h": "c",
-        "proc.h": "c"
+        "proc.h": "c",
+        "spinlock.h": "c"
     }
 }

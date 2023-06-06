@@ -5,7 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "spinlock.h"
 /*
  * the kernel's page table.
  */
@@ -296,7 +296,13 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
-extern int ref_cnt[];
+// extern int ref_cnt[];
+struct page_lock
+{
+  struct spinlock lock;
+  int cnt[557056+100];
+};
+extern struct page_lock page_ref;
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -331,7 +337,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if(mappages(new, i, PGSIZE,pa, flags) != 0){ // 将父进程的pte拷贝到子进程中           
       goto err;
     }
-    ref_cnt[pa/PGSIZE]++;
+    // ref_cnt[pa/PGSIZE]++;
+    acquire(&page_ref.lock);
+    page_ref.cnt[pa/PGSIZE]++;
+    release(&page_ref.lock);
   }
   return 0;
 
