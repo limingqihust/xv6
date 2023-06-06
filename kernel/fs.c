@@ -379,13 +379,13 @@ iunlockput(struct inode *ip)
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
 // returns 0 if out of disk space.
+// modified for lab5-fs
 static uint
 bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
   struct buf *bp;
-
-  if(bn < NDIRECT){
+  if(bn < NDIRECT){                     // 0 ... 10
     if((addr = ip->addrs[bn]) == 0){
       addr = balloc(ip->dev);
       if(addr == 0)
@@ -396,17 +396,17 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
+  if(bn < NINDIRECT){                   // 11+0 ... 11+255
     // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0){
+    if((addr = ip->addrs[NDIRECT]) == 0){   // addr 现在是一级block的地址
       addr = balloc(ip->dev);
       if(addr == 0)
         return 0;
       ip->addrs[NDIRECT] = addr;
     }
-    bp = bread(ip->dev, addr);
+    bp = bread(ip->dev, addr);              // 读取一级block的数据
     a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
+    if((addr = a[bn]) == 0){                // addr 现在是目标地址
       addr = balloc(ip->dev);
       if(addr){
         a[bn] = addr;
@@ -417,6 +417,41 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  bn-=NINDIRECT;
+  if(bn < NINDIRECT*NINDIRECT)          // 11+256 ...
+  {
+    if((addr=ip->addrs[NDIRECT+1])==0)  // addr现在是第一级block的地址
+    {
+      addr=balloc(ip->dev);             
+      if(addr==0)
+        return 0;
+      ip->addrs[NDIRECT+1]=addr;
+    }
+    bp = bread(ip->dev, addr);          // 读进第一级block的数据
+    a = (uint*)bp->data;
+    int index_1=bn/NINDIRECT,index_2=bn%NINDIRECT;
+    if((addr = a[index_1]) == 0)        // addr现在是第二级block的地址
+    {
+      addr = balloc(ip->dev);           
+      if(addr==0)
+        return 0;
+      a[index_1]=addr;
+      log_write(bp);
+    }
+    brelse(bp);
+
+    bp = bread(ip->dev, addr);      // 读入第二级block的数据
+    a = (uint*)bp->data;
+    if((addr = a[index_2]) == 0){
+      addr = balloc(ip->dev);
+      if(addr){
+        a[index_2] = addr;
+        log_write(bp);
+      }
+    }
+    brelse(bp);
+    return addr;
+  }
   panic("bmap: out of range");
 }
 
@@ -448,6 +483,29 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  if(ip->addrs[NDIRECT+1])
+  {
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);      // 读进第一级block
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j])
+      {
+        uint addr=a[j];
+        struct buf* bp_son=bread(ip->dev,addr);     // 读进第二级block
+        uint* a_son=(uint*)bp_son->data;
+        for(int k=0;k<NINDIRECT;k++)
+        { 
+            if(a_son[k])
+              bfree(ip->dev,a_son[k]);
+        }
+        brelse(bp_son);
+        bfree(ip->dev,addr);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
+  }
   ip->size = 0;
   iupdate(ip);
 }
