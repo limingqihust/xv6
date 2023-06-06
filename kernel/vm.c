@@ -361,6 +361,8 @@ int check_cow(pagetable_t pagetable,uint64 va)
   pte_t* pte=walk(pagetable,PGROUNDDOWN(va),0);
   if(pte==0)
     return 0;
+  if(!(*pte & PTE_V))
+    return 0;
   if(!(*pte & PTE_COW))
     return 0;
   return 1;

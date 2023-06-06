@@ -5,6 +5,7 @@
         "riscv.h": "c",
         "param.h": "c",
         "types.h": "c",
-        "elf.h": "c"
+        "elf.h": "c",
+        "proc.h": "c"
     }
 }

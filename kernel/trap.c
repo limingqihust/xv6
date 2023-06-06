@@ -70,15 +70,11 @@ usertrap(void)
   {
     struct proc* p=myproc();
     uint64 va=r_stval();
-    pte_t* pte=walk(p->pagetable,PGROUNDDOWN(va),0);
-    if(pte==0 || !(*pte & PTE_COW))       // 发生普通的缺页异常
-    {
-      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    if(va>p->sz)
       setkilled(p);
-    }
-    else                                  // 发生cow引起的缺页异常
+    else if(check_cow(p->pagetable,va))
     {
+      pte_t* pte=walk(p->pagetable,PGROUNDDOWN(va),0);
       uint64 old_pa=PTE2PA(*pte);         // 旧页的物理地址
       uint64 new_pa=(uint64)kalloc();     // 新页的物理地址
       if(new_pa==0) 
@@ -92,6 +88,8 @@ usertrap(void)
         panic("usertrap: mmappages error\n");
       }
     }
+    else  
+      setkilled(p);
   }
   
   else if((which_dev = devintr()) != 0){
