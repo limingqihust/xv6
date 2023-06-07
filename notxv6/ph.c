@@ -16,7 +16,7 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
-
+pthread_mutex_t lock[NBUCKET];
 
 double
 now()
@@ -40,7 +40,7 @@ static
 void put(int key, int value)
 {
   int i = key % NBUCKET;
-
+  pthread_mutex_lock(&lock[i]);
   // is the key already present?
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
@@ -50,10 +50,12 @@ void put(int key, int value)
   if(e){
     // update the existing key.
     e->value = value;
-  } else {
+  } 
+  else {
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  pthread_mutex_unlock(&lock[i]);
 
 }
 
@@ -74,13 +76,14 @@ get(int key)
 static void *
 put_thread(void *xa)
 {
-  int n = (int) (long) xa; // thread number
-  int b = NKEYS/nthread;
+  // pthread_mutex_lock(&lock);
+  int n = (int) (long) xa;  // 该线程的线程号
+  int b = NKEYS/nthread;    // 每个线程需要处理的数
 
   for (int i = 0; i < b; i++) {
-    put(keys[b*n + i], n);
+    put(keys[b*n + i], n);  // 线程n把键值对放进相应的bucket
   }
-
+  // pthread_mutex_unlock(&lock);
   return NULL;
 }
 
@@ -117,7 +120,11 @@ main(int argc, char *argv[])
   for (int i = 0; i < NKEYS; i++) {
     keys[i] = random();
   }
-
+  // pthread_mutex_init(&lock,NULL);
+  for(int i=0;i<NBUCKET;i++)
+  {
+    pthread_mutex_init(&lock[i],NULL);
+  }
   //
   // first the puts
   //
