@@ -134,8 +134,11 @@ void test3(void)
       exit(-1);
     }
     if(pid == 0){
-      if (i == 0) {
-        for(i = 0; i < N; i++) {
+      if (i == 0) 
+      {
+        for(i = 0; i < N; i++) 
+        {
+          printf("brk %d\n",i);
           a = sbrk(4096);
           *(int *)(a+4) = 1;
           a1 = sbrk(-4096);
@@ -146,7 +149,9 @@ void test3(void)
         }
         printf("child done %d\n", i);
         exit(0);
-      } else {
+      } 
+      else 
+      {
         countfree();
         printf("child done %d\n", i);
         exit(0);
