@@ -138,7 +138,6 @@ void test3(void)
       {
         for(i = 0; i < N; i++) 
         {
-          printf("brk %d\n",i);
           a = sbrk(4096);
           *(int *)(a+4) = 1;
           a1 = sbrk(-4096);

@@ -17,10 +17,7 @@ extern char end[]; // first address after kernel.
 struct run {
   struct run *next;
 };
-// struct {
-//   struct spinlock lock;
-//   struct run *freelist;
-// } kmem;
+
 struct {
   struct spinlock lock;
   struct run *freelist;
@@ -65,11 +62,12 @@ kfree(void *pa)
 
   push_off();
   int cpu_id=cpuid();
+  pop_off();
   acquire(&kmem[cpu_id].lock);
   r->next = kmem[cpu_id].freelist;
   kmem[cpu_id].freelist = r;
   release(&kmem[cpu_id].lock);
-  pop_off();
+  
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -81,6 +79,7 @@ kalloc(void)
   struct run *r;
   push_off();                 // 关中断
   int cpu_id=cpuid();
+  pop_off();                  // 开中断           
   acquire(&kmem[cpu_id].lock);
   r = kmem[cpu_id].freelist;
   if(r)
@@ -111,6 +110,6 @@ kalloc(void)
   
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
-  pop_off();            // 开中断
+  
   return (void*)r;
 }
