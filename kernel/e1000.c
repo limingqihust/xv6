@@ -20,6 +20,7 @@ static struct mbuf *rx_mbufs[RX_RING_SIZE];
 static volatile uint32 *regs;
 
 struct spinlock e1000_lock;
+struct spinlock e1000_rx_lock;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -30,7 +31,7 @@ e1000_init(uint32 *xregs)
   int i;
 
   initlock(&e1000_lock, "e1000");
-
+  initlock(&e1000_rx_lock,"e1000_rx");
   regs = xregs;
 
   // Reset the device
@@ -102,8 +103,25 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
-  
+  acquire(&e1000_lock);
+  int tx_ring_index=regs[E1000_TDT] % TX_RING_SIZE;
+  if(!(tx_ring[tx_ring_index].status & E1000_TXD_STAT_DD))
+  {
+    release(&e1000_lock);
+    return -1;
+  }
+  if(tx_mbufs[tx_ring_index])
+  {
+    mbuffree(tx_mbufs[tx_ring_index]);
+  }
+  tx_mbufs[tx_ring_index]=m;
+  tx_ring[tx_ring_index].addr=(uint64)m->head;
+  tx_ring[tx_ring_index].length=m->len;
+  tx_ring[tx_ring_index].cmd=E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;;
+  regs[E1000_TDT]=(regs[E1000_TDT]+1) % TX_RING_SIZE;
+  release(&e1000_lock);
   return 0;
+
 }
 
 static void
@@ -115,6 +133,24 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  while(1)
+  {
+    int ring_index=(regs[E1000_RDT]+1) % RX_RING_SIZE;
+    if(!(rx_ring[ring_index].status & E1000_RXD_STAT_DD))
+    {
+      regs[E1000_RDT]=(ring_index-1) % RX_RING_SIZE;
+      return ;
+    }
+
+    rx_mbufs[ring_index]->len=rx_ring[ring_index].length;
+    net_rx(rx_mbufs[ring_index]);
+
+    rx_mbufs[ring_index]=mbufalloc(0);
+    rx_ring[ring_index].addr=(uint64)rx_mbufs[ring_index]->head;
+    rx_ring[ring_index].status=0;
+
+    regs[E1000_RDT]=ring_index % RX_RING_SIZE;
+  }
 }
 
 void
